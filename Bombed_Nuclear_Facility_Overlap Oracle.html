@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Overlap Oracle Report</title>
+
+  <!-- Leaflet core CSS -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    crossorigin=""
+  />
+  
+  <!-- Leaflet Draw CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw/dist/leaflet.draw.css" />
+
+  <style>
+    html, body { height: 100%; margin: 0; }
+    #map { height: 100%; }
+    .info-panel {
+      position: absolute;
+      top: 10px;
+      left: 50px;
+      z-index: 1000;
+      background: white;
+      padding: 10px;
+      border-radius: 5px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.3);
+      max-width: 300px;
+      max-height: 80%;
+      overflow-y: auto;
+    }
+    .info-title {
+      font-weight: bold;
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+    /* Style for the layer control (legend) */
+    .leaflet-control-layers {
+      max-height: 80vh;
+      overflow-y: auto;
+      min-width: 250px;
+    }
+    .leaflet-control-layers-expanded {
+      padding: 15px 10px;
+    }
+    .leaflet-control-layers-selector {
+      margin-right: 8px;
+    }
+    
+    /* Dynamic Legend Styles */
+    .legend {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      z-index: 1000;
+      background: white;
+      padding: 10px;
+      border-radius: 5px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.3);
+      max-width: 300px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .legend-title {
+      font-weight: bold;
+      margin-bottom: 10px;
+      font-size: 14px;
+      border-bottom: 1px solid #ccc;
+      padding-bottom: 5px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      margin-bottom: 5px;
+    }
+    .legend-color {
+      width: 20px;
+      height: 20px;
+      margin-right: 8px;
+      border: 1px solid #999;
+    }
+    .legend-label {
+      flex: 1;
+    }
+    .legend-empty {
+      font-style: italic;
+      color: #666;
+    }
+    .layer-control-toggle {
+      position: absolute;
+      top: 10px;
+      right: 50px; /* Move it further to the left */
+      z-index: 1001;
+      background: white;
+      padding: 5px 8px;
+      border-radius: 4px;
+      box-shadow: 0 0 5px rgba(0,0,0,0.3);
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+    }
+  
+    /* Add style to adjust the position of the layer control */
+    .leaflet-top.leaflet-right {
+      top: 40px; /* Move it down to avoid overlap */
+    }
+    
+    .layer-control-toggle input {
+      margin-right: 5px;
+    }
+    
+    /* Hidden class for the layer control */
+    .leaflet-control-layers-hidden {
+      display: none !important;
+    }
+
+    /* draw the label itself */
+    .leaflet-control-layers .leaflet-control-layers-toggle::after {
+        content: "Base Maps";          /* the text label */
+        font: bold 14px/26px Arial, sans-serif;  /* using Arial for better letter spacing */
+        color: rgb(56, 50, 50);                  /* explicit black color */
+        margin-left: 90px;             /* gap between icon and text */
+        margin-top: 4px;               /* move text down by 5px */
+        white-space: nowrap;           /* keep it on one line */
+        pointer-events: none;          /* clicks still hit the toggle */
+        display: inline-block;         /* allows for positioning */
+        letter-spacing: 1px;           /* increase spacing between letters */
+        text-decoration: none;         /* removes any underline */
+        position: relative;            /* for better positioning control */
+        top: 4px;                      /* alternative way to move text down */
+    }
+
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div class="info-panel">
+    <div class="info-title">Overlap Oracle: Bombed - Nuclear - Facility</div>
+    <div>Click on features to see details. Use the layer control (top right) to show/hide features.</div>
+  </div>
+  
+  <!-- Add the layer control toggle checkbox -->
+  <div class="layer-control-toggle">
+    <input type="checkbox" id="layer-control-checkbox" checked>
+    <label for="layer-control-checkbox">Show Layer Control</label>
+  </div>
+
+  <!-- Dynamic Legend Container -->
+  <div id="legend" class="legend">
+    <div class="legend-title">Legend</div>
+    <div id="legend-content">
+      <div class="legend-empty">No layers visible</div>
+    </div>
+  </div>
+
+  <!-- Leaflet core JS -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    crossorigin=""
+  ></script>
+  
+  <!-- Leaflet Draw JS -->
+  <script src="https://unpkg.com/leaflet-draw/dist/leaflet.draw.js"></script>
+  <script src="https://unpkg.com/leaflet-geometryutil@0.10.0/src/leaflet.geometryutil.js"></script>
+
+  <script>
+    // Set up the map
+    const map = L.map('map').setView([49.491, -119.589], 12);
+
+    // Base layers
+    const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors',
+      maxZoom: 19
+    });
+    
+    const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
+      maxZoom: 19
+    });
+
+    // Topographic map with contours
+    var topoMap = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
+        attribution: '&copy; Esri, USGS, NGA, NASA, CGIAR, GEBCO, N Robinson, NCEAS, NLS, OS, NMA, Geodatastyrelsen',
+        maxZoom: 19
+    });
+
+      // BCGW WMS Layers
+    var bctsSalesSchedule = L.tileLayer.wms('https://openmaps.gov.bc.ca/geo/pub/WHSE_FOREST_TENURE.BCTS_OPERATING_AREAS_SP/wms', {
+        layers: 'pub:WHSE_FOREST_TENURE.BCTS_OPERATING_AREAS_SP',
+        format: 'image/png',
+        transparent: true,
+        version: '1.1.1',
+        attribution: '&copy; Province of British Columbia'
+    });
+    
+    // Additional useful BCGW layers
+    var cutBlocks = L.tileLayer.wms('https://openmaps.gov.bc.ca/geo/pub/WHSE_FOREST_VEGETATION.RSLT_OPENING_SVW/wms', {
+        layers: 'pub:WHSE_FOREST_VEGETATION.RSLT_OPENING_SVW',
+        format: 'image/png',
+        transparent: true,
+        version: '1.1.1',
+        attribution: '&copy; Province of British Columbia'
+    });
+    
+    var forestRoads = L.tileLayer.wms('https://openmaps.gov.bc.ca/geo/pub/WHSE_FOREST_TENURE.FTEN_ROAD_SECTION_LINES_SVW/wms', {
+        layers: 'pub:WHSE_FOREST_TENURE.FTEN_ROAD_SECTION_LINES_SVW',
+        format: 'image/png',
+        transparent: true,
+        version: '1.1.1',
+        attribution: '&copy; Province of British Columbia'
+    });
+    
+    // Add default base layer
+    satelliteLayer.addTo(map);
+
+    // Drawing tool setup
+    const drawnItems = new L.FeatureGroup();
+    map.addLayer(drawnItems);
+
+    const drawControl = new L.Control.Draw({
+      draw: {
+        polygon: true,
+        polyline: true,
+        rectangle: true,
+        circle: false,
+        marker: true,
+        circlemarker: false
+      },
+      edit: {
+        featureGroup: drawnItems
+      }
+    });
+    map.addControl(drawControl);
+
+    // Add event handler for created shapes
+    map.on(L.Draw.Event.CREATED, function(e) {
+      const layer = e.layer;
+      
+      // Calculate area for polygons and rectangles
+      if (e.layerType === 'polygon' || e.layerType === 'rectangle') {
+        // Calculate area in square meters
+        const area = L.GeometryUtil.geodesicArea(layer.getLatLngs()[0]);
+        
+        // Convert to hectares (1 hectare = 10,000 square meters)
+        const areaHectares = (area / 10000).toFixed(2);
+        
+        // Add area information to the popup
+        layer.bindPopup("Area: " + areaHectares + " hectares");
+      }
+      
+      // Calculate length for polylines
+      if (e.layerType === 'polyline') {
+        // Get the latlngs array
+        const latlngs = layer.getLatLngs();
+        
+        // Calculate the distance
+        let distance = 0;
+        for (let i = 0; i < latlngs.length - 1; i++) {
+          distance += map.distance(latlngs[i], latlngs[i + 1]);
+        }
+        
+        // Format distance
+        let distanceText = "";
+        if (distance >= 1000) {
+          distanceText = (distance / 1000).toFixed(2) + " km";
+        } else {
+          distanceText = distance.toFixed(0) + " m";
+        }
+        
+        layer.bindPopup("Length: " + distanceText);
+      }
+      
+      // Add the layer to drawnItems
+      drawnItems.addLayer(layer);
+      
+      // Open the popup to show the measurement
+      layer.openPopup();
+    });
+    
+    // Base maps control
+var baseMaps = {
+    "Satellite": satelliteLayer,
+    "OpenStreetMap": osmLayer,
+    "Topographic with Contours": topoMap
+};
+
+// Overlay maps control - Remove all BCGW layers
+var bcgwlayers = {
+    // Empty object - no layers will show under basemap choices
+};
+
+// Add the base/BCGW layers control to bottom left, collapsed by default
+L.control.layers(baseMaps, bcgwlayers, {
+    position: 'bottomleft',
+    collapsed: true
+}).addTo(map);
+    
+    // Define empty overlayMaps object (will be populated by script)
+    const overlayMaps = {};
+    
+    // Initialize layers array to store all feature layers
+    const allLayers = [];
+    
+    // Create a layer info object to store colors and other properties
+    const layerInfo = {};
+    
+    // Store drawn items
+    allLayers.push(drawnItems);
+    
+    // Fix for polygon interior holes rendering
+    L.GeoJSON.include({
+      // Override the resetStyle method to ensure proper polygon rendering
+      resetStyle: function(layer) {
+        var style = this.options.style;
+        if (style) {
+          this._setLayerStyle(layer, style);
+        }
+        // Force redraw of polygons to fix interior holes
+        if (layer.getLatLngs && layer._map) {
+          layer.redraw();
+        }
+        return this;
+      }
+    });
+    
+    // Configure default GeoJSON renderer options
+    L.GeoJSON.mergeOptions({
+      renderer: L.canvas({ padding: 0.5, tolerance: 5 }),
+      smoothFactor: 0.5 // Reduced from 1.0 for better detail
+    });
+
+    // Helper function to create a layer from GeoJSON
+    function createGeometryLayer(data, style) {
+        try {
+            // Create layer from GeoJSON
+            if (data && data.geometry) {
+                return L.geoJSON(data, {
+                    style: style,
+                    pointToLayer: function(feature, latlng) {
+                        // Use circle markers for point geometries instead of default markers
+                        return L.circleMarker(latlng, {
+                            radius: 8,
+                            color: style.color,
+                            weight: style.weight || 2,
+                            opacity: style.opacity || 1,
+                            fillColor: style.fillColor || style.color,
+                            fillOpacity: style.fillOpacity || 0.5
+                        });
+                    },
+                    onEachFeature: function(feature, layer) {
+                        // You can add additional processing here if needed
+                    }
+                });
+            }
+            
+            console.error("Invalid geometry data:", data);
+            return L.polygon([]);
+        } catch (e) {
+            console.error("Error creating geometry layer:", e);
+            return L.polygon([]);
+        }
+    }
+    
+    
+    // Input feature
+    const inputFeature = {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[51.82893581335554, 32.57461968686087], [51.82615971459873, 32.57394670830386], [51.82001807044346, 32.58434526934811], [51.824695607111, 32.58525849058606], [51.82952525909891, 32.586219765392876], [51.83020977714204, 32.58575515061166], [51.83287178985777, 32.58160554928413], [51.831597826969606, 32.581317153101814], [51.83298587589885, 32.576622569736145], [51.82893581335554, 32.57461968686087]], [[51.73447951351918, 33.718168596244794], [51.73326734663776, 33.71460998027294], [51.71811526421283, 33.71585551298415], [51.719933513636676, 33.73154174348544], [51.73847253214364, 33.7299702845735], [51.73740297371183, 33.72581912190901], [51.735905591727686, 33.723684159986334], [51.73447951351918, 33.718168596244794]], [[51.00341860118418, 34.88133309875636], [51.00288619935969, 34.87978886033776], [51.00018615736474, 34.87967967064708], [50.999083323538166, 34.879804458747316], [50.998779092897536, 34.88019442023594], [50.9968966696264, 34.88056878233776], [50.99655441150317, 34.88045959369252], [50.99491917495382, 34.88102113363174], [50.99315083772376, 34.88440589097969], [50.99199095997834, 34.8851545740097], [50.99366422580695, 34.88676110050643], [50.995584677459014, 34.887151029428814], [51.000357286426336, 34.88860154797744], [51.001840408553676, 34.88863274215826], [51.003760860205745, 34.88808685078082], [51.004407348969636, 34.88757215033103], [51.004065090846375, 34.88440589097969], [51.003570716504484, 34.88370399406452], [51.0031714144624, 34.88223779034296], [51.00341860118418, 34.88133309875636]]]}, "properties": {}};
+    
+    // Create input feature layer
+    const inputLayer = createGeometryLayer(inputFeature, {
+      color: 'yellow',
+      weight: 3,
+      opacity: 1,
+      fillColor: 'yellow',
+      fillOpacity: 0
+    }).bindPopup("<b>Input: Bombed - Nuclear - Facility</b>").addTo(map);
+    
+    // Store input layer style info
+    storeLayerInfo("Input: Bombed - Nuclear - Facility", inputLayer, {
+      color: 'yellow',
+      fillColor: 'yellow'
+    });
+    
+    // Add input layer to overlayMaps and allLayers with custom name
+    overlayMaps["Input: Bombed - Nuclear - Facility"] = inputLayer;
+    allLayers.push(inputLayer);
+    
+    // Zoom to fit the input feature
+    map.fitBounds(inputLayer.getBounds(), { padding: [20, 20] });
+    
+
+    // Bunker Buster Bombs - Feature Layer (combines direct and buffer geometries)
+    const layer_0_combined = L.featureGroup();
+    
+    // Store layer style info
+    storeLayerInfo("Bunker Buster Bombs", layer_0_combined, {
+      color: "#de1f4d",
+      fillColor: "#de1f4d"
+    });
+            
+
+    // Bunker Buster Bombs - Direct Feature 1
+    const layer_0_hit_0 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Point", "coordinates": [50.9999195203204, 34.88271206752019]}, "properties": {}}, {
+        color: "#de1f4d",
+        weight: 2,
+        fillColor: "#de1f4d",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Bunker Buster Bombs</b><br>Fordow Bunker Buster Bomb  ---  Underground nuclear facility');
+    layer_0_hit_0.addTo(layer_0_combined);
+                    
+
+    // Bunker Buster Bombs - Direct Feature 2
+    const layer_0_hit_1 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Point", "coordinates": [50.999952795715146, 34.88263017783466]}, "properties": {}}, {
+        color: "#de1f4d",
+        weight: 2,
+        fillColor: "#de1f4d",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Bunker Buster Bombs</b><br>Natanz Bumnker Buster Bomb  ---  Underground enrichment program');
+    layer_0_hit_1.addTo(layer_0_combined);
+                    
+
+    // Bunker Buster Bombs - Direct Feature 3
+    const layer_0_hit_2 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Point", "coordinates": [50.999967056470304, 34.88254438915127]}, "properties": {}}, {
+        color: "#de1f4d",
+        weight: 2,
+        fillColor: "#de1f4d",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Bunker Buster Bombs</b><br>Fordow Bunker Buster Bomb  ---  Underground nuclear facility');
+    layer_0_hit_2.addTo(layer_0_combined);
+                    
+
+    // Bunker Buster Bombs - Direct Feature 4
+    const layer_0_hit_3 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Point", "coordinates": [51.72718337342538, 33.724979629394014]}, "properties": {}}, {
+        color: "#de1f4d",
+        weight: 2,
+        fillColor: "#de1f4d",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Bunker Buster Bombs</b><br>Natanz Bumnker Buster Bomb  ---  Underground enrichment program');
+    layer_0_hit_3.addTo(layer_0_combined);
+                    
+
+    // Bunker Buster Bombs - Direct Feature 5
+    const layer_0_hit_4 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Point", "coordinates": [50.999171776152636, 34.88183007387745]}, "properties": {}}, {
+        color: "#de1f4d",
+        weight: 2,
+        fillColor: "#de1f4d",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Bunker Buster Bombs</b><br>Fordow Bunker Buster Bomb  ---  Underground nuclear facility');
+    layer_0_hit_4.addTo(layer_0_combined);
+                    
+
+    // Bunker Buster Bombs - Direct Feature 6
+    const layer_0_hit_5 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Point", "coordinates": [50.99918128302328, 34.8817520829991]}, "properties": {}}, {
+        color: "#de1f4d",
+        weight: 2,
+        fillColor: "#de1f4d",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Bunker Buster Bombs</b><br>Natanz Bumnker Buster Bomb  ---  Underground enrichment program');
+    layer_0_hit_5.addTo(layer_0_combined);
+                    
+
+    // Bunker Buster Bombs - Direct Feature 7
+    const layer_0_hit_6 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Point", "coordinates": [50.99923357215933, 34.881693590531555]}, "properties": {}}, {
+        color: "#de1f4d",
+        weight: 2,
+        fillColor: "#de1f4d",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Bunker Buster Bombs</b><br>Fordow Bunker Buster Bomb  ---  Underground nuclear facility');
+    layer_0_hit_6.addTo(layer_0_combined);
+                    
+
+    // Add combined layer to layer control
+    overlayMaps["Bunker Buster Bombs"] = layer_0_combined;
+    allLayers.push(layer_0_combined);
+            
+
+    // Bomber Flight Path - Feature Layer (combines direct and buffer geometries)
+    const layer_1_combined = L.featureGroup();
+    
+    // Store layer style info
+    storeLayerInfo("Bomber Flight Path", layer_1_combined, {
+      color: "#861fde",
+      fillColor: "#861fde"
+    });
+            
+
+    // Bomber Flight Path - Direct Feature 1
+    const layer_1_hit_0 = createGeometryLayer({"type": "Feature", "geometry": {"type": "LineString", "coordinates": [[-93.54782880689608, 38.73034882854661], [-84.7036647329845, 39.61231796534316], [-76.62255399407016, 40.557891772230924], [-62.93220168343879, 41.70359003689988], [-50.19256828326793, 41.84539397753483], [-33.3173076221447, 41.1332419301152], [-18.10580505477651, 39.31873399837512], [-5.746459218789851, 36.411022908922085], [1.859292064894237, 37.17236405488362], [7.4447656640743025, 39.04237527184906], [12.079520352793875, 38.67220910955729], [16.120075721801918, 36.50660391478004], [21.111350002168752, 34.376821107987574], [31.56925801723439, 33.48943615573542], [35.490973522659395, 34.52381708919211], [39.59094882390806, 35.49714834551635], [42.621365351113255, 36.17155551489514], [46.3054011293723, 36.74504049407557], [48.9792980649302, 35.9313541291358], [50.99923357215933, 34.881693590531555]]}, "properties": {}}, {
+        color: "#861fde",
+        weight: 2,
+        fillColor: "#861fde",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Bomber Flight Path</b><br>Direct overlap detected');
+    layer_1_hit_0.addTo(layer_1_combined);
+                    
+
+    // Add combined layer to layer control
+    overlayMaps["Bomber Flight Path"] = layer_1_combined;
+    allLayers.push(layer_1_combined);
+            
+
+    // Tomahawk Cruise Missles - Feature Layer (combines direct and buffer geometries)
+    const layer_2_combined = L.featureGroup();
+    
+    // Store layer style info
+    storeLayerInfo("Tomahawk Cruise Missles", layer_2_combined, {
+      color: "#deb41f",
+      fillColor: "#deb41f"
+    });
+            
+
+    // Tomahawk Cruise Missles - Direct Feature 1
+    const layer_2_hit_0 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Point", "coordinates": [51.82485009937359, 32.58325980523635]}, "properties": {}}, {
+        color: "#deb41f",
+        weight: 2,
+        fillColor: "#deb41f",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Tomahawk Cruise Missles</b><br>Isfahan Tomahawk Cruise Missle  ---  unknown');
+    layer_2_hit_0.addTo(layer_2_combined);
+                    
+
+    // Tomahawk Cruise Missles - Direct Feature 2
+    const layer_2_hit_1 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Point", "coordinates": [51.82498557699652, 32.5825989074196]}, "properties": {}}, {
+        color: "#deb41f",
+        weight: 2,
+        fillColor: "#deb41f",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Tomahawk Cruise Missles</b><br>Natanz Tomahawk Cruise Missle  ---  Eltrical Substation');
+    layer_2_hit_1.addTo(layer_2_combined);
+                    
+
+    // Tomahawk Cruise Missles - Direct Feature 3
+    const layer_2_hit_2 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Point", "coordinates": [51.82765947352515, 32.58280919427891]}, "properties": {}}, {
+        color: "#deb41f",
+        weight: 2,
+        fillColor: "#deb41f",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Tomahawk Cruise Missles</b><br>Natanz Tomahawk Cruise Missle  ---  Backup Gas Turbine Generators');
+    layer_2_hit_2.addTo(layer_2_combined);
+                    
+
+    // Tomahawk Cruise Missles - Direct Feature 4
+    const layer_2_hit_3 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Point", "coordinates": [51.82873616278366, 32.58349412236521]}, "properties": {}}, {
+        color: "#deb41f",
+        weight: 2,
+        fillColor: "#deb41f",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Tomahawk Cruise Missles</b><br>Natanz Tomahawk Cruise Missle  ---  Support Building realted to Power Supply');
+    layer_2_hit_3.addTo(layer_2_combined);
+                    
+
+    // Tomahawk Cruise Missles - Direct Feature 5
+    const layer_2_hit_4 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Point", "coordinates": [51.82749547439192, 32.583938722299884]}, "properties": {}}, {
+        color: "#deb41f",
+        weight: 2,
+        fillColor: "#deb41f",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Tomahawk Cruise Missles</b><br>Natanz Tomahawk Cruise Missle  ---  unknown');
+    layer_2_hit_4.addTo(layer_2_combined);
+                    
+
+    // Tomahawk Cruise Missles - Direct Feature 6
+    const layer_2_hit_5 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Point", "coordinates": [51.8285650328237, 32.58395073891508]}, "properties": {}}, {
+        color: "#deb41f",
+        weight: 2,
+        fillColor: "#deb41f",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Tomahawk Cruise Missles</b><br>Natanz Tomahawk Cruise Missle  ---  Pilot fuel enrichment plant');
+    layer_2_hit_5.addTo(layer_2_combined);
+                    
+
+    // Tomahawk Cruise Missles - Direct Feature 7
+    const layer_2_hit_6 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Point", "coordinates": [51.824885750812264, 32.57707121017327]}, "properties": {}}, {
+        color: "#deb41f",
+        weight: 2,
+        fillColor: "#deb41f",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Tomahawk Cruise Missles</b><br>Isfahan Tomahawk Cruise Missle  ---  unknown');
+    layer_2_hit_6.addTo(layer_2_combined);
+                    
+
+    // Tomahawk Cruise Missles - Direct Feature 8
+    const layer_2_hit_7 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Point", "coordinates": [51.825769919427294, 32.57747979056053]}, "properties": {}}, {
+        color: "#deb41f",
+        weight: 2,
+        fillColor: "#deb41f",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Tomahawk Cruise Missles</b><br>Natanz Tomahawk Cruise Missle  ---  Eltrical Substation');
+    layer_2_hit_7.addTo(layer_2_combined);
+                    
+
+    // Tomahawk Cruise Missles - Direct Feature 9
+    const layer_2_hit_8 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Point", "coordinates": [51.827317214503594, 32.57811068372616]}, "properties": {}}, {
+        color: "#deb41f",
+        weight: 2,
+        fillColor: "#deb41f",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Tomahawk Cruise Missles</b><br>Natanz Tomahawk Cruise Missle  ---  Backup Gas Turbine Generators');
+    layer_2_hit_8.addTo(layer_2_combined);
+                    
+
+    // Tomahawk Cruise Missles - Direct Feature 10
+    const layer_2_hit_9 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Point", "coordinates": [51.826796696491975, 32.578939850351304]}, "properties": {}}, {
+        color: "#deb41f",
+        weight: 2,
+        fillColor: "#deb41f",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Tomahawk Cruise Missles</b><br>Natanz Tomahawk Cruise Missle  ---  Support Building realted to Power Supply');
+    layer_2_hit_9.addTo(layer_2_combined);
+                    
+
+    // Tomahawk Cruise Missles - Direct Feature 11
+    const layer_2_hit_10 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Point", "coordinates": [51.82562018104921, 32.57860938636386]}, "properties": {}}, {
+        color: "#deb41f",
+        weight: 2,
+        fillColor: "#deb41f",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Tomahawk Cruise Missles</b><br>Natanz Tomahawk Cruise Missle  ---  unknown');
+    layer_2_hit_10.addTo(layer_2_combined);
+                    
+
+    // Tomahawk Cruise Missles - Direct Feature 12
+    const layer_2_hit_11 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Point", "coordinates": [51.72085603582275, 33.73036303305827]}, "properties": {}}, {
+        color: "#deb41f",
+        weight: 2,
+        fillColor: "#deb41f",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Tomahawk Cruise Missles</b><br>Natanz Tomahawk Cruise Missle  ---  Pilot fuel enrichment plant');
+    layer_2_hit_11.addTo(layer_2_combined);
+                    
+
+    // Tomahawk Cruise Missles - Direct Feature 13
+    const layer_2_hit_12 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Point", "coordinates": [51.72130601272836, 33.728469857452275]}, "properties": {}}, {
+        color: "#deb41f",
+        weight: 2,
+        fillColor: "#deb41f",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Tomahawk Cruise Missles</b><br>Isfahan Tomahawk Cruise Missle  ---  unknown');
+    layer_2_hit_12.addTo(layer_2_combined);
+                    
+
+    // Tomahawk Cruise Missles - Direct Feature 14
+    const layer_2_hit_13 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Point", "coordinates": [51.72109425915466, 33.72732512624131]}, "properties": {}}, {
+        color: "#deb41f",
+        weight: 2,
+        fillColor: "#deb41f",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Tomahawk Cruise Missles</b><br>Natanz Tomahawk Cruise Missle  ---  Eltrical Substation');
+    layer_2_hit_13.addTo(layer_2_combined);
+                    
+
+    // Tomahawk Cruise Missles - Direct Feature 15
+    const layer_2_hit_14 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Point", "coordinates": [51.72387353165935, 33.72838180169462]}, "properties": {}}, {
+        color: "#deb41f",
+        weight: 2,
+        fillColor: "#deb41f",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Tomahawk Cruise Missles</b><br>Natanz Tomahawk Cruise Missle  ---  Backup Gas Turbine Generators');
+    layer_2_hit_14.addTo(layer_2_combined);
+                    
+
+    // Tomahawk Cruise Missles - Direct Feature 16
+    const layer_2_hit_15 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Point", "coordinates": [51.724402916941116, 33.72611433621952]}, "properties": {}}, {
+        color: "#deb41f",
+        weight: 2,
+        fillColor: "#deb41f",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Tomahawk Cruise Missles</b><br>Natanz Tomahawk Cruise Missle  ---  Support Building realted to Power Supply');
+    layer_2_hit_15.addTo(layer_2_combined);
+                    
+
+    // Tomahawk Cruise Missles - Direct Feature 17
+    const layer_2_hit_16 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Point", "coordinates": [51.732026064459596, 33.727699366669015]}, "properties": {}}, {
+        color: "#deb41f",
+        weight: 2,
+        fillColor: "#deb41f",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Tomahawk Cruise Missles</b><br>Natanz Tomahawk Cruise Missle  ---  unknown');
+    layer_2_hit_16.addTo(layer_2_combined);
+                    
+
+    // Tomahawk Cruise Missles - Direct Feature 18
+    const layer_2_hit_17 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Point", "coordinates": [51.72154423606024, 33.72518972173044]}, "properties": {}}, {
+        color: "#deb41f",
+        weight: 2,
+        fillColor: "#deb41f",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Tomahawk Cruise Missles</b><br>Natanz Tomahawk Cruise Missle  ---  Pilot fuel enrichment plant');
+    layer_2_hit_17.addTo(layer_2_combined);
+                    
+
+    // Add combined layer to layer control
+    overlayMaps["Tomahawk Cruise Missles"] = layer_2_combined;
+    allLayers.push(layer_2_combined);
+            
+
+    // Cruise Missles flight path - Feature Layer (combines direct and buffer geometries)
+    const layer_3_combined = L.featureGroup();
+    
+    // Store layer style info
+    storeLayerInfo("Cruise Missles flight path", layer_3_combined, {
+      color: "#de821f",
+      fillColor: "#de821f"
+    });
+            
+
+    // Cruise Missles flight path - Direct Feature 1
+    const layer_3_hit_0 = createGeometryLayer({"type": "Feature", "geometry": {"type": "LineString", "coordinates": [[64.15514867349297, 23.558557824894457], [62.97863402123666, 25.66523216904565], [62.087335043016786, 27.260975066231065], [59.377786147755195, 31.18023781134359], [56.418673539059114, 32.06063557213824], [51.8285650328237, 32.58395073891508]]}, "properties": {}}, {
+        color: "#de821f",
+        weight: 2,
+        fillColor: "#de821f",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Cruise Missles flight path</b><br>Direct overlap detected');
+    layer_3_hit_0.addTo(layer_3_combined);
+                    
+
+    // Add combined layer to layer control
+    overlayMaps["Cruise Missles flight path"] = layer_3_combined;
+    allLayers.push(layer_3_combined);
+            
+
+    // Fordow Uranium Enrichment Facility - Feature Layer (combines direct and buffer geometries)
+    const layer_4_combined = L.featureGroup();
+    
+    // Store layer style info
+    storeLayerInfo("Fordow Uranium Enrichment Facility", layer_4_combined, {
+      color: "#1fdeac",
+      fillColor: "#1fdeac"
+    });
+            
+
+    // Fordow Uranium Enrichment Facility - Direct Feature 1
+    const layer_4_hit_0 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.99366422580695, 34.88676110050643], [50.995584677459014, 34.887151029428814], [51.000357286426336, 34.88860154797744], [51.001840408553676, 34.88863274215826], [51.003760860205745, 34.88808685078082], [51.004407348969636, 34.88757215033103], [51.004065090846375, 34.88440589097969], [51.003570716504484, 34.88370399406452], [51.0031714144624, 34.88223779034296], [51.00341860118418, 34.88133309875636], [51.00288619935969, 34.87978886033776], [51.00018615736474, 34.87967967064708], [50.999083323538166, 34.879804458747316], [50.998779092897536, 34.88019442023594], [50.9968966696264, 34.88056878233776], [50.99655441150317, 34.88045959369252], [50.99491917495382, 34.88102113363174], [50.99315083772376, 34.88440589097969], [50.99199095997834, 34.8851545740097], [50.99366422580695, 34.88676110050643]]]}, "properties": {}}, {
+        color: "#1fdeac",
+        weight: 2,
+        fillColor: "#1fdeac",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Fordow Uranium Enrichment Facility</b><br>Direct overlap detected');
+    layer_4_hit_0.addTo(layer_4_combined);
+                    
+
+    // Add combined layer to layer control
+    overlayMaps["Fordow Uranium Enrichment Facility"] = layer_4_combined;
+    allLayers.push(layer_4_combined);
+            
+
+    // Fordow Tunnel Entrance - Feature Layer (combines direct and buffer geometries)
+    const layer_5_combined = L.featureGroup();
+    
+    // Store layer style info
+    storeLayerInfo("Fordow Tunnel Entrance", layer_5_combined, {
+      color: "#a9de1f",
+      fillColor: "#a9de1f"
+    });
+            
+
+    // Fordow Tunnel Entrance - Direct Feature 1
+    const layer_5_hit_0 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.99579244969938, 34.8847124808862], [50.995897028869805, 34.88475147491739], [50.99612520095199, 34.88456430369363], [50.99680021122613, 34.88420555826264], [50.996857254246684, 34.88389360413988], [50.99650548835448, 34.883433469572225], [50.99635337393244, 34.88277055925632], [50.99579244969938, 34.8823104190843], [50.99535511837804, 34.88246639895688], [50.99532659686776, 34.88276276070608], [50.99524103233696, 34.882879744803695], [50.99477518040364, 34.88330868703163], [50.99478468727429, 34.883612844185635], [50.99492729482565, 34.88383121287581], [50.99579244969938, 34.8847124808862]]]}, "properties": {}}, {
+        color: "#a9de1f",
+        weight: 2,
+        fillColor: "#a9de1f",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Fordow Tunnel Entrance</b><br>Direct overlap detected');
+    layer_5_hit_0.addTo(layer_5_combined);
+                    
+
+    // Fordow Tunnel Entrance - Direct Feature 2
+    const layer_5_hit_1 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.99677168971585, 34.88579650548068], [50.99696183341712, 34.886007070076374], [50.997513250779534, 34.8860148690562], [50.997826988290846, 34.885788707220165], [50.99736113545923, 34.88529738865302], [50.99717099175797, 34.88521160203874], [50.99693331190684, 34.88532858335929], [50.99677168971585, 34.88579650548068]]]}, "properties": {}}, {
+        color: "#a9de1f",
+        weight: 2,
+        fillColor: "#a9de1f",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Fordow Tunnel Entrance</b><br>Direct overlap detected');
+    layer_5_hit_1.addTo(layer_5_combined);
+                    
+
+    // Fordow Tunnel Entrance - Direct Feature 3
+    const layer_5_hit_2 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[51.00056505866673, 34.88724704889613], [51.00079323074888, 34.88715346620576], [51.00117351815137, 34.88684152337458], [51.00088830304866, 34.88656077358284], [51.00057456553738, 34.886428196894194], [51.00019427813489, 34.88659196780519], [51.0002798426657, 34.88688831454239], [51.00056505866673, 34.88724704889613]]]}, "properties": {}}, {
+        color: "#a9de1f",
+        weight: 2,
+        fillColor: "#a9de1f",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Fordow Tunnel Entrance</b><br>Direct overlap detected');
+    layer_5_hit_2.addTo(layer_5_combined);
+                    
+
+    // Add combined layer to layer control
+    overlayMaps["Fordow Tunnel Entrance"] = layer_5_combined;
+    allLayers.push(layer_5_combined);
+            
+
+    // Natanz Nuclear Facility - Feature Layer (combines direct and buffer geometries)
+    const layer_6_combined = L.featureGroup();
+    
+    // Store layer style info
+    storeLayerInfo("Natanz Nuclear Facility", layer_6_combined, {
+      color: "#1fdeac",
+      fillColor: "#1fdeac"
+    });
+            
+
+    // Natanz Nuclear Facility - Direct Feature 1
+    const layer_6_hit_0 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[51.719933513636676, 33.73154174348544], [51.73847253214364, 33.7299702845735], [51.73740297371183, 33.72581912190901], [51.735905591727686, 33.723684159986334], [51.73447951351918, 33.718168596244794], [51.73326734663776, 33.71460998027294], [51.71811526421283, 33.71585551298415], [51.719933513636676, 33.73154174348544]]]}, "properties": {}}, {
+        color: "#1fdeac",
+        weight: 2,
+        fillColor: "#1fdeac",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Natanz Nuclear Facility</b><br>Direct overlap detected');
+    layer_6_hit_0.addTo(layer_6_combined);
+                    
+
+    // Add combined layer to layer control
+    overlayMaps["Natanz Nuclear Facility"] = layer_6_combined;
+    allLayers.push(layer_6_combined);
+            
+
+    // Esfahan Nuclear Technology Center - Feature Layer (combines direct and buffer geometries)
+    const layer_7_combined = L.featureGroup();
+    
+    // Store layer style info
+    storeLayerInfo("Esfahan Nuclear Technology Center", layer_7_combined, {
+      color: "#1fdeac",
+      fillColor: "#1fdeac"
+    });
+            
+
+    // Esfahan Nuclear Technology Center - Direct Feature 1
+    const layer_7_hit_0 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[51.82001807044346, 32.58434526934811], [51.824695607111, 32.58525849058606], [51.82952525909891, 32.586219765392876], [51.83020977714204, 32.58575515061166], [51.83287178985777, 32.58160554928413], [51.831597826969606, 32.581317153101814], [51.83298587589885, 32.576622569736145], [51.82893581335554, 32.57461968686087], [51.82615971459873, 32.57394670830386], [51.82001807044346, 32.58434526934811]]]}, "properties": {}}, {
+        color: "#1fdeac",
+        weight: 2,
+        fillColor: "#1fdeac",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Esfahan Nuclear Technology Center</b><br>Direct overlap detected');
+    layer_7_hit_0.addTo(layer_7_combined);
+                    
+
+    // Add combined layer to layer control
+    overlayMaps["Esfahan Nuclear Technology Center"] = layer_7_combined;
+    allLayers.push(layer_7_combined);
+            
+
+    // Iran - Feature Layer (combines direct and buffer geometries)
+    const layer_8_combined = L.featureGroup();
+    
+    // Store layer style info
+    storeLayerInfo("Iran", layer_8_combined, {
+      color: "#d8dcdd",
+      fillColor: "#d8dcdd"
+    });
+            
+
+    // Iran - Direct Feature 1
+    const layer_8_hit_0 = createGeometryLayer({"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[60.80693610313399, 31.99666416921357], [60.823463371511636, 31.94846420235774], [60.82416326062758, 31.77443611054206], [60.81138219964842, 31.659718030900393], [60.84880924113331, 31.496109147451236], [61.10416325144575, 31.46305393877844], [61.18860019715057, 31.452218149496495], [61.450518243956466, 31.418200195484047], [61.71360925426648, 31.38332712012774], [61.740827137481794, 31.353327114592275], [61.77110022511439, 31.31832713652901], [61.766800308751215, 31.256182197756768], [61.78832721552131, 31.21721808251403], [61.81110017632033, 31.177218131606963], [61.85012715505549, 31.02388210950126], [61.75832721034522, 30.79027310296546], [61.37221819211571, 30.381664206377945], [61.27749128647809, 30.28444502626167], [61.21666331240322, 30.22277316115398], [61.18027327979409, 30.185827073494455], [61.04193617018048, 30.043609142494102], [60.910818225820634, 29.907218142713695], [60.871654118359004, 29.866936057578997], [60.86630026167363, 29.863654039446054], [61.041518247859166, 29.68346424315912], [61.28249125994216, 29.434164145630827], [61.31443620125171, 29.395826996762384], [61.35346334887016, 29.291527119559632], [61.36027330995243, 29.26582703164786], [61.42804518841, 29.151382201394835], [61.51193613718682, 29.07110905009515], [61.547618233571676, 28.984536059321353], [61.58277327670127, 28.90943605081595], [61.63721826433829, 28.80638206024335], [61.65138234008787, 28.78527307508954], [61.82193613318109, 28.62610911535017], [61.905545114264946, 28.555000066161192], [61.92500018169803, 28.541245027187404], [61.94596332196548, 28.531800131567177], [62.208600200661714, 28.459435975718115], [62.31665416420651, 28.438882207867625], [62.39985410910384, 28.419436024893916], [62.48909120342768, 28.35561805792592], [62.53081816127574, 28.2950001339371], [62.59249119940301, 28.23360906364134], [62.63290923911859, 28.24027317958865], [62.68693613734764, 28.25027312477193], [62.782218260221335, 28.26374502261475], [62.78889126146043, 28.21249119369233], [62.78333623874523, 28.171936025077226], [62.769154058349415, 28.07610907908491], [62.759163332627686, 27.99527316643958], [62.76500015505087, 27.97277312104715], [62.772491229561346, 27.945273101727174], [62.802491234737445, 27.835000112670016], [62.81554521018817, 27.786944985727146], [62.82193624373429, 27.76027309935792], [62.82332713672975, 27.739718157862498], [62.839709231967554, 27.474436118528477], [62.8288823274299, 27.447218067256426], [62.800554176829046, 27.384444987997828], [62.78027332318959, 27.266800114994137], [62.81485420630867, 27.234991128312227], [62.93589123588888, 27.21471815366405], [62.99860027677881, 27.230273121932374], [63.039163323445855, 27.24138216110777], [63.201936196110616, 27.267636125947078], [63.28485417331502, 27.22221811317959], [63.33027319170946, 27.14888216005791], [63.32880920908753, 27.127982219783412], [63.27651820273711, 27.120554009207208], [63.252636148650666, 27.08055405835921], [63.25305407097198, 27.05139107080167], [63.25819117136586, 26.94040914037716], [63.21610027096187, 26.853882083038847], [63.18512712712668, 26.639164209345203], [63.163609272679736, 26.63055398350707], [63.05957325780514, 26.63555395595263], [63.015827099200784, 26.643609132490475], [62.97360024416843, 26.647773094706842], [62.82916328900972, 26.651109091917032], [62.77026331962181, 26.648745060176164], [62.74565405146511, 26.618882183428948], [62.703882334159694, 26.602218121032806], [62.60082716998092, 26.580273125493164], [62.54666331101036, 26.577218089563758], [62.50860913586267, 26.574435967649475], [62.43790929036465, 26.566527139653573], [62.31527332964733, 26.509027116186697], [62.27256334179056, 26.420409108963828], [62.288609154498396, 26.379018097793246], [62.274891164152606, 26.35660002651805], [62.22916335616745, 26.360136016716478], [62.18277320954353, 26.37110910151921], [62.13895412839936, 26.379544983992687], [62.103882234230774, 26.314445088343078], [62.08110927343178, 26.314164127141282], [62.06081819426942, 26.311664141052947], [61.8709633930177, 26.244018158638735], [61.85485421314972, 26.230553972697606], [61.84415421091731, 26.211664179644195], [61.83277326324163, 26.179436097847276], [61.816936159717045, 26.10860901530964], [61.79415414659492, 25.958327023539493], [61.78193618197516, 25.869991151474764], [61.77999124494341, 25.843891078325107], [61.76193612282887, 25.807809164356556], [61.71804512435967, 25.800691084206477], [61.68762719776059, 25.797500094024095], [61.665545073754416, 25.59055408923594], [61.65970925744433, 25.50638217845091], [61.651927163816126, 25.390273205833214], [61.64916331448649, 25.348054061959], [61.64360913079779, 25.298335964977507], [61.61102716447587, 25.197645000659847], [61.58110913416271, 25.199718012548544], [61.51840026035943, 25.164091068548316], [61.49943620487413, 25.11805396837767], [61.44137325243031, 25.075973125823133], [61.3962362008305, 25.080827086246934], [61.21901812464799, 25.123053941189255], [61.19894514206358, 25.158473181757923], [61.17638223253081, 25.173609054949814], [60.992763232350896, 25.21221811271136], [60.96610023040174, 25.2172180856887], [60.77860024049645, 25.248600098634896], [60.717209170062155, 25.258054047166297], [60.64888224235347, 25.26305402021087], [60.62262710428939, 25.269854090781724], [60.60610017008505, 25.32971814615515], [60.6036001838022, 25.355409014409283], [60.605273211577206, 25.377773105713942], [60.603609236125315, 25.397773164853106], [60.593318270977726, 25.415136110397402], [60.57221816996881, 25.434164203642908], [60.550963340440404, 25.441109113781945], [60.51915418487592, 25.44332713266016], [60.488045086412384, 25.440554063863278], [60.45499121890202, 25.43166421706302], [60.42777333568671, 25.41582711437187], [60.41027326282331, 25.397773164853106], [60.394991209448136, 25.365345090173236], [60.4084632743068, 25.33290913665483], [60.437309258753146, 25.329418073774992], [60.46680014733526, 25.26597310183777], [60.44401813421314, 25.267218149890226], [60.30970919969093, 25.32805400348456], [60.295554177162764, 25.34569120369231], [60.196936224261904, 25.36527317331912], [60.09193612305137, 25.375273119204355], [59.958045109952145, 25.37277313343763], [59.83166327600964, 25.411382190987936], [59.78027332480492, 25.412218034236904], [59.73304515602213, 25.40805407201036], [59.66582715361592, 25.399718102110146], [59.63499130559382, 25.39319111359194], [59.613045136216, 25.392909146560047], [59.59096334728146, 25.399018045714563], [59.56166323122128, 25.415554031431896], [59.52860014340289, 25.450827092391165], [59.4905451292287, 25.473536014750643], [59.4505451789211, 25.477773234180614], [59.42929118662252, 25.474853984845897], [59.36970926657658, 25.461382087720338], [59.24700021533444, 25.426191169835754], [59.14305405444616, 25.396664239490743], [59.11999124772917, 25.391664099179902], [59.051936228378864, 25.393609035599457], [59.02290919477519, 25.398609008778926], [59.00013623397619, 25.413327127542853], [58.95151817831109, 25.47527308019437], [58.936518259715506, 25.500135984701977], [58.91207327725458, 25.51847307403218], [58.81832722231279, 25.56000004039532], [58.78999119258859, 25.564718045666293], [58.76193612444423, 25.565554056598543], [58.72040915852788, 25.55652708210171], [58.4997181732841, 25.58721809112898], [58.39554519766805, 25.604717996352004], [58.36860022892426, 25.604445081831138], [58.34006336914022, 25.595764111899275], [58.323836172203464, 25.580536038022917], [58.163045116904456, 25.539027009920876], [58.128182266990706, 25.54290917174347], [58.07138230002228, 25.561382215981478], [58.051800162299, 25.572082217946395], [58.027227104333065, 25.595209062775236], [58.00901825801554, 25.62221806939429], [57.99958224647331, 25.646382090805936], [57.976100177148616, 25.68540906953052], [57.95123610006492, 25.699991067063504], [57.868327175183666, 25.6802731425504], [57.8338822466929, 25.6647180067071], [57.77860024211183, 25.668609053694755], [57.78610925418189, 25.700827078274152], [57.75659120863043, 25.74069107459713], [57.73040916019279, 25.747773112268153], [57.66401811629445, 25.746245090725168], [57.63401811201664, 25.732218143929554], [57.52416337936512, 25.737773166488935], [57.31909123308307, 25.77145399982731], [57.300827233800355, 25.800553956176508], [57.29943617281999, 25.827354086089937], [57.291109255463496, 25.865553939609615], [57.27138227787538, 25.919445050670987], [57.23068227046687, 25.985136037947832], [57.20221816613599, 25.99166419904401], [57.195545164896856, 25.999444952092656], [57.16638217666485, 26.077909121712548], [57.169509129523846, 26.103944989303244], [57.082073306465034, 26.412491060228263], [57.075136108005914, 26.45513600410901], [57.09040927704293, 26.49360910768466], [57.09304521795418, 26.540273174815628], [57.091382247717036, 26.58750017019998], [57.08818220523156, 26.633744973848103], [57.06610024921036, 26.708045013485957], [57.05638226997519, 26.737773109613823], [57.037218221659856, 26.801391084429717], [57.03220919677099, 26.822500069308727], [57.023463350980066, 26.84750010200362], [57.00902719978546, 26.871382155904286], [56.865409155127956, 27.00638209447448], [56.8440822411879, 27.03069112259935], [56.867491219987826, 27.059436021090686], [56.855554048962965, 27.07610913531132], [56.80888227061601, 27.123609045671177], [56.69054522014867, 27.148327110753474], [56.64527322003363, 27.154991058982777], [56.61832724517672, 27.155553987476654], [56.6158540807916, 27.15494495853959], [56.532209224588556, 27.160827042197532], [56.355827159237, 27.200273117590104], [56.32804517354913, 27.20013598940306], [56.13276325800056, 27.160273166559413], [56.113054050885395, 27.150273220570732], [55.97526327327141, 27.06166409866918], [55.95631816056051, 27.03208218307478], [55.84485410326396, 27.006800183612025], [55.79639128007322, 27.007500072534125], [55.689991232645795, 26.996109066163015], [55.6599912274697, 26.990691171547965], [55.641382229303815, 26.98013600871102], [55.6072182623929, 26.94860915565044], [55.5788822326687, 26.91124497820487], [55.58693623555367, 26.854718093848], [55.59470927775708, 26.82389113012608], [55.598327242563876, 26.798609130682507], [55.48165416754847, 26.760553949216412], [55.44331819179447, 26.756664243354425], [55.41720923388161, 26.754718133102198], [55.370827134366, 26.76291814842273], [55.35569126114207, 26.77694509625907], [55.27471822096945, 26.786945041697376], [55.23971824322761, 26.778745025928128], [55.162491242468455, 26.71693603343877], [54.85277321416712, 26.519164189692262], [54.78846322901553, 26.490409064900792], [54.69027325687218, 26.50610903975685], [54.47249129499617, 26.588327128522483], [54.36054511009003, 26.655827098247585], [54.32750029490282, 26.701109156644417], [54.296936188152465, 26.716109074755114], [54.26985409068221, 26.717636089936878], [54.23763623490115, 26.706800133099], [54.21193614608819, 26.695827048959078], [54.183054119435994, 26.698053952384917], [54.15416337463397, 26.701664205720675], [54.12582717782314, 26.706109129353404], [54.08888226304951, 26.71666412496795], [54.065827167470914, 26.724718127943227], [53.931382278320356, 26.71000017611589], [53.836109208668105, 26.699164219900393], [53.74777333657667, 26.709164165267676], [53.6869361421937, 26.732773136607243], [53.64638231493644, 26.75305398962717], [53.485963248403294, 26.855136015129872], [53.47318218742413, 26.87305400975889], [53.47033619614494, 26.8994912033711], [53.47068220114123, 26.933745023741487], [53.4623541096867, 26.953191207306364], [53.439300188206175, 26.97443597874403], [53.39000018008637, 27.0011090386815], [53.307500292289944, 27.017218050919364], [53.23693623433369, 27.04027314667508], [53.16638223481363, 27.06332706811847], [53.10999130403174, 27.08416414393153], [53.001109208779354, 27.129435976821743], [52.85305411993056, 27.209436046074256], [52.81638228761344, 27.244991073811264], [52.75638227815951, 27.28916420632606], [52.6858913098297, 27.32154500727446], [52.670191167046575, 27.323609134522897], [52.60832718931075, 27.34819107786201], [52.57360917926184, 27.386245086025273], [52.61499130531335, 27.411244950426955], [52.62638231232359, 27.461664109926392], [52.54166323094084, 27.5638820894086], [52.49971817561651, 27.608609098255513], [52.43401813649595, 27.642500150789424], [52.363054093777954, 27.65110903622207], [52.24777325294269, 27.67832708703689], [52.22416327609794, 27.686382096489513], [52.19331820776776, 27.701109100256662], [52.173882250195696, 27.712218139334293], [52.1580451475694, 27.725554082265454], [52.139854069928205, 27.7443000415098], [52.128463231801256, 27.761391077272496], [52.04860029013086, 27.817909077290018], [52.0261002447017, 27.828327112029775], [51.97832725219066, 27.836935997228306], [51.82249124291343, 27.850000031831925], [51.79221815528083, 27.85110912545085], [51.76720923833232, 27.846382066816613], [51.71734512863828, 27.832682181848945], [51.60638230881242, 27.84194502252902], [51.58221811994638, 27.84916418805319], [51.43027332591735, 27.937773142474104], [51.32527322470681, 28.048335977887024], [51.26471816510348, 28.154991170162436], [51.234163277762896, 28.281664190952746], [51.13888232898727, 28.408336037958122], [51.09332718797952, 28.497218074588876], [51.075482283319566, 28.562500192363213], [51.076382164367224, 28.599445107394555], [51.072773252781886, 28.68110915227929], [51.06916333418506, 28.704445041318518], [51.054718129769036, 28.73874496284813], [51.024854079221264, 28.783882181514773], [51.00860928069488, 28.80055395475402], [50.947918266463155, 28.821800067698888], [50.923745192360656, 28.82597308236157], [50.90388226194079, 28.82347309552037], [50.878954145757135, 28.830900132767887], [50.85277327141761, 28.859164245324962], [50.80103614201683, 28.929791167631162], [50.80027322081233, 28.970900044073367], [50.82576325925735, 28.991600160373796], [50.86061823004773, 28.974091202477805], [50.89172716052631, 28.94485395046101], [50.92597327028511, 29.0052732231605], [50.92889117888932, 29.02958208344317], [50.923745192360656, 29.06458206166173], [50.8852732628766, 29.103336126128603], [50.82659122297998, 29.136591159499996], [50.71666323361535, 29.13242703056949], [50.6871451880639, 29.119582099068893], [50.6388821897182, 29.142773148403688], [50.62985404116272, 29.18597314219919], [50.656391146919766, 29.248882175703063], [50.66874506616787, 29.400345010339556], [50.658609166407985, 29.433054047086245], [50.63916331838468, 29.470418056866247], [50.625273331204696, 29.49221804599539], [50.46582723624402, 29.624445083116857], [50.441663383347894, 29.638327023527022], [50.41527329587026, 29.643891098641166], [50.39402718359335, 29.655273220184036], [50.2802731894836, 29.807218014555136], [50.23756336961183, 29.8622180517557], [50.20597331763673, 29.8836091719569], [50.18721813842127, 29.895000177845503], [50.16166322454477, 29.91777313836359], [50.14750015490831, 29.932782109386764], [50.133536071988736, 29.95250003417529], [50.13721824208384, 29.985836036486653], [50.138882217535766, 30.026945080562104], [50.13360916251354, 30.068882089099493], [50.11054518169845, 30.124445055136526], [50.09944519560262, 30.148327108746262], [50.08055406175881, 30.179582220034703], [50.0555451448103, 30.20277310264407], [50.038045071946904, 30.212773216046322], [50.026109242106735, 30.215827078091838], [50.00319127435627, 30.218636021760982], [49.92665410517517, 30.207773075020977], [49.898891229348315, 30.198054090429647], [49.874163273979626, 30.185553990917995], [49.83374506627913, 30.163045060767786], [49.723327238166455, 30.091391187069917], [49.578882235899435, 30.00819107482533], [49.555054161578404, 30.007218104029068], [49.49852710908151, 30.067354068679073], [49.50013609865487, 30.096382107746383], [49.49500017146077, 30.124436002897205], [49.485827184837106, 30.148673113952107], [49.461791238562704, 30.161109175737536], [49.42332718820199, 30.1702731110637], [49.35304509704037, 30.17166417146385], [49.315818215472106, 30.163609162698034], [49.23831813225648, 30.188045092681183], [49.00470912619037, 30.297353995188228], [48.92887318641163, 30.387045053241348], [49.06388217713645, 30.406109021610735], [49.11485403983153, 30.393609089186356], [49.19047322331873, 30.36069117582064], [49.222491255153045, 30.373336114851423], [49.26346333890495, 30.429091194462156], [49.223882316133455, 30.473327023535074], [49.192773217669924, 30.48971800324707], [49.10026332540743, 30.516109095818344], [49.03888231251106, 30.51916413140855], [48.978882303057134, 30.511527044679635], [48.94888229788104, 30.496382118573507], [48.86638224209966, 30.359027032790852], [48.862009236110055, 30.3081180348011], [48.888536115445866, 30.273118056917223], [48.913609237682685, 30.2550000705163], [48.93499130458794, 30.202500187694643], [48.9429091857579, 30.16902705747089], [48.93470916980835, 30.087218005617306], [48.917354103896415, 30.040691066707865], [48.867763244643804, 30.02082712959083], [48.770818152431325, 30.025554019742412], [48.70805412566288, 30.027218163011927], [48.659854159405725, 29.99541806051477], [48.642354086542326, 29.962353966634005], [48.61777331653967, 29.953191205953782], [48.595682308195336, 29.950964133753484], [48.54555416836794, 29.963027033472486], [48.47338229403807, 29.982900191390268], [48.45012720652777, 30.00540912132116], [48.41110022689426, 30.103609152313997], [48.41012708823518, 30.169991143768197], [48.41194512296169, 30.199673139272775], [48.28943623163622, 30.329718031854483], [48.16042717403401, 30.42708221947287], [48.141382316885526, 30.439991188912835], [48.10754507622659, 30.454318040377206], [48.06751813603627, 30.46379109996177], [48.032491168411696, 30.491382146157473], [48.03305409678619, 30.58805398858419], [48.03443610454515, 30.65693613357531], [48.03666334434144, 30.946382194443753], [48.03666334434144, 30.99610917594931], [47.923882321804115, 30.999436121321008], [47.84331815073137, 30.99971808843218], [47.69388222822172, 31.00110914878243], [47.69470918672956, 31.11138213750214], [47.69554519756049, 31.19416416070806], [47.69582716435513, 31.221664179289313], [47.696382214504574, 31.235427096422534], [47.696382214504574, 31.304445028768054], [47.69720917301242, 31.407773108507623], [47.71666323523072, 31.455553979687824], [47.74860013033026, 31.53028216689965], [47.801100180935514, 31.653045030447267], [47.833327089938024, 31.727773217225025], [47.8644361884016, 31.798609016770698], [47.84916335443616, 31.81971800208849], [47.78694515750909, 31.889164249295117], [47.737500143336106, 31.936664159383415], [47.633191213989996, 32.05318216912732], [47.60268225930653, 32.100591051815414], [47.52943615979695, 32.196935999481454], [47.416082318433865, 32.34945394860319], [47.437900245220014, 32.38555396773187], [47.36123617373368, 32.473809038123534], [47.27096324373381, 32.48860007957357], [47.24886335015302, 32.47350008093483], [47.198873176281914, 32.462209154864944], [47.15138231855045, 32.458464120186235], [47.132773320384565, 32.46582711924457], [47.07193612600164, 32.50443600956899], [47.05443622022486, 32.515827016100474], [46.95610023501696, 32.58471804586511], [46.93360018958777, 32.60054509075655], [46.90331821761704, 32.62304496908984], [46.88207327764159, 32.643191208163095], [46.85721825288104, 32.66693613426204], [46.840273229268746, 32.680273083310176], [46.7474912606629, 32.753053986701524], [46.71776333183017, 32.76943608128345], [46.69582722088858, 32.778882151522694], [46.65388216556425, 32.79888221007723], [46.55752715959391, 32.85787320725116], [46.49360022775756, 32.902491083239006], [46.45082720781226, 32.925273096551045], [46.414991219239454, 32.940409137460485], [46.37331824025848, 32.95138222209077], [46.3047091777702, 32.96360907205544], [46.27540922879668, 32.966800062279724], [46.24500018743406, 32.96527321471344], [46.203882257704194, 32.95916414871204], [46.17832717674104, 32.953326991155], [46.15165411635565, 32.9526359867256], [46.10641815844645, 32.971064104323354], [46.09701818911003, 33.00297317174371], [46.11305411136659, 33.08305404256108], [46.14513618050425, 33.13582700777011], [46.18831823753438, 33.17540903679409], [46.19901823976683, 33.193464159473194], [46.177145160015485, 33.2647820853514], [46.12693621942323, 33.303600188014514], [46.04916322173605, 33.38360008934045], [46.04888226015623, 33.40637321768615], [46.0442271184887, 33.43735407275364], [46.029163329676415, 33.460544955292164], [46.00647318276683, 33.48578219530855], [45.95193616183064, 33.47970917073915], [45.930545209688894, 33.48276420707374], [45.874227202345146, 33.49979120520783], [45.89067333398797, 33.52161801635266], [45.944782207978314, 33.55436410047313], [45.898882235173986, 33.63304502547455], [45.81506337080884, 33.62241811332881], [45.78609115509876, 33.60049105527126], [45.751691153151995, 33.595027059747935], [45.75232717205125, 33.63728207820647], [45.6967271584697, 33.66943606470231], [45.647382223805884, 33.73506418680224], [45.64105405436334, 33.76739117617322], [45.550273180969214, 33.888600034120024], [45.500136156803684, 33.94589118119857], [45.472600263689564, 33.94053598306504], [45.4468002624541, 33.942491145739986], [45.42373611455235, 33.951100198301965], [45.40360915399915, 33.975200181943045], [45.467209191598556, 34.077082215145225], [45.54725418764105, 34.134191138889115], [45.566518147480586, 34.151309164673215], [45.58416322729549, 34.30127314738485], [45.57332710334807, 34.32402699740603], [45.54943616492346, 34.34554501917356], [45.51985408117035, 34.34735400123587], [45.492354062277116, 34.33512715137677], [45.460545075595924, 34.378464105939784], [45.43863612162373, 34.457836034932605], [45.56292717255652, 34.58610916108552], [45.64846332199581, 34.573473107053786], [45.71467331583855, 34.557609182096805], [45.72957332290993, 34.585618149760634], [45.708327209734726, 34.659154094930386], [45.68401818190214, 34.699300058940544], [45.659645115867946, 34.71533598027839], [45.651654144173214, 34.73520008533434], [45.6911002193278, 34.816518124703315], [45.712627126097864, 34.829582159233546], [45.738327214910825, 34.83097322032865], [45.765054086178374, 34.8462732110213], [45.797736132907794, 34.91403603639717], [45.84874521011013, 34.8969361158792], [45.86776324625917, 34.90360006390163], [45.89235407379973, 34.97304497024856], [45.880545145366504, 34.99888218672961], [45.87777324982691, 35.03249110395595], [45.94981822274988, 35.09327314597151], [45.99206335041342, 35.07523612821003], [46.03575418806762, 35.05922702890137], [46.166009131713814, 35.10851815140528], [46.186600282317066, 35.22171810109262], [46.160200137301494, 35.23415399573781], [46.13304511818976, 35.27249114466086], [46.14804520387197, 35.297464186694356], [46.06499127203926, 35.38332706234114], [46.05110027964445, 35.39916416542302], [45.99096330944909, 35.48520004288282], [45.97999122997499, 35.5847180447358], [46.034163303140495, 35.6890180888906], [46.07277319858084, 35.69665400307747], [46.110691252911856, 35.692627001798385], [46.15124507927082, 35.69484502089191], [46.22942711404279, 35.71220913924091], [46.26860027382754, 35.728045068714124], [46.33416335310496, 35.77749108886395], [46.34520014002559, 35.814191084910654], [46.323609195952166, 35.832636133564506], [46.29096335941355, 35.83151815508812], [46.25889117982883, 35.81304511070098], [46.20069126754184, 35.80277308884722], [46.17290911386901, 35.807353966205135], [46.147736079209686, 35.82403613318386], [46.135545104472655, 35.847354084969936], [46.08936333196034, 35.86548212947552], [45.88817318061845, 35.83198217738572], [45.867909258425456, 35.817773174749796], [45.7571271526853, 35.81734502754104], [45.73999119036275, 35.83221804372436], [45.73290915203879, 35.853464157033685], [45.718882205015674, 35.87957311497423], [45.68250021861654, 35.92193609185456], [45.66331823363993, 35.94054509037754], [45.62451823582083, 35.96628222733088], [45.52007318386141, 36.0111731862447], [45.51054513902001, 36.0177730966973], [45.47248224662079, 36.01680012526253], [45.413882181587134, 35.99541805805782], [45.354436215271235, 36.06443599007609], [45.343600259308765, 36.13388206959079], [45.31970915289921, 36.23831806856441], [45.27916337185194, 36.38110010188359], [45.24373608529233, 36.42831804443977], [45.21610027975571, 36.42888214657763], [45.19388220112119, 36.41943607674489], [45.16554516528387, 36.41137318891304], [45.139163292899525, 36.40887320251851], [45.10694510114851, 36.41818214425929], [45.08650918301966, 36.43520008982809], [45.083927220975504, 36.4576449830106], [45.055263291799584, 36.50610914741149], [45.01309125466084, 36.54285406997229], [45.015827107994596, 36.55777318662713], [45.03881816537154, 36.614227148578415], [45.06276325154652, 36.63963605005863], [45.065409249995696, 36.68304508900901], [45.02555413865458, 36.736382156455136], [44.939227241796544, 36.782073083660634], [44.897763307070385, 36.782344993038166], [44.870536203547005, 36.78457323819121], [44.85304518300672, 36.794582068808076], [44.84450016817399, 36.821927021736904], [44.88249114414652, 36.87068220594652], [44.90553618128888, 36.892553944010864], [44.90942722855215, 36.92053608984554], [44.90311816986892, 37.030473132032725], [44.856518140862036, 37.05262700525089], [44.817491161228546, 37.05581816324051], [44.784991169769555, 37.084718127225344], [44.766173294435475, 37.1122821835559], [44.78733609156304, 37.14970905791449], [44.792763373844814, 37.17499105763312], [44.82054519154773, 37.268744991452465], [44.81818216600634, 37.297418141661765], [44.801654058602246, 37.321664137191156], [44.648600170387475, 37.4277731645363], [44.612800224020475, 37.434227062546384], [44.58885413263067, 37.44309109262564], [44.58443619830046, 37.61388209370144], [44.59887318852156, 37.69081807432744], [44.61776331625222, 37.717973093695875], [44.57679123250035, 37.76680019421368], [44.293054086606844, 37.87331809040183], [44.22397329001679, 37.89915396609335], [44.23888218142629, 37.96027312816336], [44.323318121018, 38.097209118598215], [44.39901810616839, 38.211300064877065], [44.473218233577704, 38.316745077672515], [44.48251812340492, 38.3413001979613], [44.43672711534629, 38.39480909485647], [44.31814514550494, 38.38205401755572], [44.30526333397507, 38.400536114121635], [44.304163293010745, 38.449436136780314], [44.31176333226689, 38.46992704039882], [44.321527243260846, 38.50937311548763], [44.317218107487925, 38.61304502006009], [44.306518105255506, 38.64728207734934], [44.26180014827846, 38.72429114811184], [44.303191159566474, 38.809982194374854], [44.300263361409314, 38.84262702506002], [44.283663336680235, 38.86249112957399], [44.25054509679493, 38.86554499250975], [44.20942716706507, 38.893464106157204], [44.17332714835891, 38.96803605474217], [44.162418101871665, 39.00520007235389], [44.198036160953194, 39.05667317283911], [44.21644516718737, 39.13651800911475], [44.07471824867946, 39.33610017693426], [44.06054512060676, 39.35248210332027], [44.034954164524414, 39.37744508771792], [44.03638227292545, 39.38547310674405], [44.07686334472957, 39.41165398138653], [44.200954068659044, 39.41693608947762], [44.23091819961429, 39.408454106209255], [44.30452723556664, 39.387291141337215], [44.34027320216823, 39.39554496964467], [44.40110017102826, 39.416518167877626], [44.42582712118217, 39.436444969255035], [44.47789114481986, 39.64065394683586], [44.47108218985072, 39.69886425346296], [44.60846325933838, 39.779154000809044], [44.73671811298763, 39.701800098320106], [44.81304506471417, 39.63080906638465], [44.86846335899521, 39.62234502084245], [44.88860021089801, 39.605818086554095], [44.903045080242485, 39.55554510768083], [44.908045052808234, 39.53582701614188], [44.92777320269779, 39.476645079309925], [44.95457333247508, 39.43235409699121], [44.97470917826477, 39.42053611678551], [45.00221824948112, 39.41669116973683], [45.0630450503562, 39.373045091180295], [45.11581818341796, 39.31220018532599], [45.130545187542026, 39.28555394765858], [45.14180023992388, 39.24707313268979], [45.143527079479355, 39.21685402524113], [45.22581825809257, 39.19498211886719], [45.271236103287244, 39.187200192579056], [45.29839129038397, 39.19762711246364], [45.34554519544222, 39.16470903134344], [45.421100173641136, 39.06081802341954], [45.4244361716533, 39.02276418309399], [45.43347320454689, 39.00318221299491], [45.477263284480436, 38.984964146634134], [45.51859126367991, 38.97054509400958], [45.5386002080627, 38.965545121308494], [45.607491237345606, 38.95138221910515], [45.84110024431001, 38.903600174205216], [45.950827236528156, 38.88721807988872], [46.074718135612585, 38.87193602618138], [46.17824520097981, 38.841145104353494], [46.195536229588384, 38.84414498753969], [46.24500018743406, 38.86679121404374], [46.26860027382754, 38.88234500901598], [46.29471811697686, 38.89581807964995], [46.3510912772858, 38.90998215519229], [46.37638216102897, 38.90693600382681], [46.45193613401308, 38.88999114878107], [46.5163912932028, 38.878036039778785], [46.54037325881345, 38.875591206683666], [46.572491203070314, 38.915827023929474], [46.652209137789235, 38.976927074656146], [46.74547323400468, 39.05103600737667], [46.75894513177669, 39.08596423648947], [46.84888228230313, 39.16060910751636], [46.87470022019988, 39.16750003800452], [46.90873611160578, 39.16790907474761], [46.95290019163316, 39.156373228689965], [47.033882285027225, 39.19672706387269], [47.04346330352093, 39.23790014575351], [47.099709226453015, 39.30443602862703], [47.16457325474264, 39.335273217758335], [47.19950014285805, 39.339991056065486], [47.286936133901825, 39.37443598464527], [47.318609166852966, 39.39749107981812], [47.337218165018854, 39.42430009408572], [47.39166332064084, 39.47054506574382], [47.46068225834214, 39.49819109724496], [47.54250019458221, 39.51526419567476], [47.76985412173051, 39.63373602684114], [47.79388218888154, 39.66680012086608], [47.812900224132285, 39.679164266061896], [47.98470912267923, 39.71558212658665], [48.014154078604214, 39.69915409937863], [48.038318099485295, 39.68332705454171], [48.06331813209564, 39.66555406710139], [48.082491232734085, 39.646236126741684], [48.15915413102067, 39.573318095438516], [48.212491198570035, 39.52637323480087], [48.25082717342574, 39.49470908698019], [48.283873329797686, 39.47275403263594], [48.32193622309521, 39.44081814327903], [48.34054505417447, 39.42345402458615], [48.357882182526794, 39.38990914527496], [48.27887318924697, 39.350264251618256], [48.24596332257497, 39.342482157752315], [48.19853616797358, 39.33610017693426], [48.14894513983772, 39.306791175615366], [48.123873191698976, 39.27818223163412], [48.12171820429929, 39.25180019075518], [48.133327139902484, 39.2109642291762], [48.22922717702917, 39.13991804395745], [48.272354080195804, 39.12651806319332], [48.29387327582749, 39.11249111581951], [48.32692714333784, 39.054436042767904], [48.32540918095053, 39.03220907911108], [48.30873606659494, 39.003744974257046], [48.28373620196956, 38.98581809530213], [48.263718205263686, 38.97760014202182], [48.224709163189765, 38.971373226187474], [48.185263256020164, 38.96914498102143], [48.144145159203674, 38.96831802246962], [48.07679120306742, 38.95388220557672], [48.012073186944086, 38.89707318604063], [48.013191165468015, 38.86304500637267], [48.02463615134535, 38.833391173912894], [48.10304516793175, 38.783600154313916], [48.123600276329164, 38.77221803218674], [48.149300198055464, 38.76110916117093], [48.18470921198384, 38.75054511323786], [48.24690025194159, 38.71540012793906], [48.24360012904862, 38.672073232531055], [48.33165420143207, 38.602836029512034], [48.361927121079724, 38.60581814335285], [48.39873608122497, 38.62053609489601], [48.43276325537934, 38.6245731544394], [48.565263375483106, 38.471382138910556], [48.599154092850895, 38.4169359779639], [48.62350922132552, 38.39650005998935], [48.662900142616614, 38.38915399210376], [48.742209208235636, 38.4241641958509], [48.783736174152, 38.44553603728338], [48.84117333321945, 38.450482198912496], [48.8882823108354, 38.44240908502321], [49.71452724552348, 38.26280903919034], [49.96957330527168, 38.33390903551371], [50.19897325507404, 38.37843605269733], [50.30774521238099, 38.40258213659058], [50.51363610387425, 38.472300125117705], [50.712400197586184, 38.54509108705466], [50.9072271433928, 38.581364108209755], [51.09730926242884, 38.62331804829396], [51.292709195944475, 38.71485396349117], [51.46589121791222, 38.48395398779558], [51.632609116707364, 38.25587318171673], [51.78828218147355, 38.10128222078172], [51.97160027208447, 37.927827115710386], [52.07123612220344, 37.879409052217525], [52.14177319117533, 37.8523271225909], [52.54520022699783, 37.79700907621518], [52.65500919318056, 37.77763598355961], [52.738136215538084, 37.71886425756708], [52.86823609379657, 37.66855406271934], [53.00033622913863, 37.61259111248172], [53.070263262980845, 37.565082150031074], [53.21442713568309, 37.49008222144309], [53.22690024609801, 37.48360016039947], [53.52710028889251, 37.323436071682245], [53.67731824336604, 37.335345079986325], [53.905636089763654, 37.35085394771014], [54.20166328558687, 37.33027318986342], [54.35610018677539, 37.36082707149266], [54.4056823296748, 37.377909055002256], [54.424709250161996, 37.386109070586066], [54.482209273333034, 37.41415408029207], [54.512773212996734, 37.430545059620954], [54.545827248492046, 37.444154085874885], [54.580127169132986, 37.45290915105053], [54.60470927942201, 37.44832709985214], [54.630545155776694, 37.44027309706742], [54.668745176004045, 37.44012708437491], [54.7563823330776, 37.49554504307566], [54.7806911929252, 37.5138821328287], [54.80887333135976, 37.577909144439865], [54.7935361241211, 37.623945070735395], [54.78186331830117, 37.643045081181604], [54.809718226528894, 37.711109152873135], [54.83305411570235, 37.74638221360758], [54.863327203334954, 37.76666423957157], [54.89027334617682, 37.77499115749867], [54.919991215675026, 37.78416414461951], [54.954709226622235, 37.804991162501096], [55.03777321689122, 37.86582701577422], [55.05416335744072, 37.887218135798584], [55.07040916297855, 37.905818082328345], [55.140063281450956, 37.95491809744407], [55.179436098095785, 37.9647091660835], [55.22942711009506, 37.981935988813206], [55.37651811170955, 38.03846421467806], [55.39443610599597, 38.04860916759751], [55.41415419834763, 38.06777321580177], [55.43762721534922, 38.08332701085226], [55.46943620203041, 38.090827137689985], [55.55665409649628, 38.09832709701804], [55.67027330827913, 38.10889114459298], [55.6916542028829, 38.111382078986466], [55.733318128642466, 38.12068213597208], [55.76388223539279, 38.12416414593014], [55.80638217288161, 38.122491117943575], [55.83470915028266, 38.10665401510622], [55.86832712026558, 38.093882173488545], [55.98707320691942, 38.07249105344319], [56.043191222331494, 38.0750000926918], [56.07708227477086, 38.08040910269344], [56.10999130331471, 38.08665395545762], [56.16874509165303, 38.09471801711387], [56.219700189988274, 38.07120912542784], [56.33180026618404, 38.08693609060246], [56.34964517084399, 38.13602705324326], [56.32672720309352, 38.162700113351185], [56.32298216889484, 38.18283612733475], [56.36720928101075, 38.21860019899969], [56.38555408195662, 38.231373214193106], [56.419300294531176, 38.25207316205226], [56.442763253994855, 38.25999121086907], [56.47110028893384, 38.26305395801668], [56.542773273090916, 38.266109161868684], [56.56971824183471, 38.25901807191867], [56.69526322591979, 38.26693612044047], [56.75574519589669, 38.28626411901765], [56.773882292874134, 38.26693612044047], [56.79602711389725, 38.2528181459405], [56.839573279671605, 38.2340450294085], [56.866709188922286, 38.22560914675591], [56.94249131692056, 38.211382207548], [57.062627123370106, 38.19540914933253], [57.13686329298523, 38.23978210713776], [57.14979120515718, 38.260091123059745], [57.158882217816206, 38.27027312384328], [57.182491189446175, 38.28180008443608], [57.20846335460249, 38.282636095431435], [57.24151822732763, 38.27235401533504], [57.372073243313025, 38.09054500277799], [57.37081813696098, 38.07000011957666], [57.35166330895372, 37.99325407292553], [57.37887331394402, 37.97470911176756], [57.45401824894496, 37.93846425390168], [57.52860025646976, 37.92721808663899], [57.614436141380004, 37.925273150078944], [57.69964506061243, 37.92644510786154], [58.17443612391467, 37.796391162005015], [58.197773186287904, 37.78624503598806], [58.22443618823706, 37.7212360007079], [58.22096323038177, 37.69880904513514], [58.23373607716597, 37.67867319952165], [58.40720928713476, 37.64110902941347], [58.47068225444398, 37.64027318582659], [58.492491295993645, 37.64554506832778], [58.6463822011525, 37.661664138439555], [58.67470917765528, 37.65311811771315], [58.71943618695544, 37.64971808259481], [58.80630924872643, 37.67096419560093], [58.93360018402466, 37.668600163209064], [58.98081812638627, 37.65470917069924], [59.05277324532294, 37.631382165810685], [59.081663319083475, 37.61193598280433], [59.133882240123945, 37.57666426370014], [59.20221822105407, 37.53305405973178], [59.238045157303766, 37.51805397357369], [59.25985419885345, 37.51714503951796], [59.293473342036094, 37.53597314109647], [59.315682200362566, 37.540827101205906], [59.34304509052934, 37.53554499386344], [59.37554508288667, 37.495964137886084], [59.37589125496958, 37.47130910475017], [59.37054510942258, 37.42470907588508], [59.37193617040299, 37.40415396736777], [59.38721822377814, 37.3436091334651], [59.39305420807318, 37.323054024484904], [59.47999130804582, 37.23276416304596], [59.546109268589404, 37.20832706015313], [59.71554508315872, 37.147218123963796], [59.81304522552065, 37.12470902619342], [60.015827100816125, 37.043818127735484], [60.06346330057065, 37.011664141481845], [60.07638232840444, 36.98888212867278], [60.09180016842302, 36.95860904146732], [60.10610019790262, 36.936936121532995], [60.14138231132239, 36.89166412106718], [60.157491155220455, 36.87110012805814], [60.331245158784114, 36.65804505679796], [60.364718121815564, 36.64554495669478], [60.50278231695764, 36.646100173929554], [60.64082723335542, 36.647218152027115], [60.66693619126824, 36.647491067311044], [60.79639116539099, 36.64888212790131], [60.93443608178876, 36.64971813839812], [61.07277319140236, 36.65054509757101], [61.15373617403708, 36.65040914278594], [61.16666324808083, 36.632209180696314], [61.189500246183194, 36.56895397486888], [61.16262719386609, 36.41970915932383], [61.18443623541578, 36.28666421579736], [61.22081822181492, 36.17888216076046], [61.22137327106605, 36.139991135795626], [61.21693622687474, 36.10860912274822], [61.20110029744823, 36.06916422120025], [61.21166333983748, 35.93749105978462], [61.22581819438068, 35.90388214261393], [61.23707324676254, 35.89138221034711], [61.26208233169599, 35.81651806893954], [61.23047333604818, 35.69228216999836], [61.23318219949924, 35.66262699627594], [61.25360923328997, 35.632764119152846], [61.27655419002484, 35.60724507978727], [61.2879091539309, 35.555618087985735], [61.276518147819026, 35.51763599688607], [61.18360022458483, 35.34860016638292], [61.10582722689768, 35.281800085791005], [61.09623615086604, 35.23623606020256], [61.0997821983478, 35.17659110777928], [61.11638222217859, 35.163873246193184], [61.13603610924194, 35.13207314371303], [61.13166327033899, 35.08581811343105], [61.11554520523455, 35.01693613597928], [61.07749119717348, 34.879436043518425], [61.05110027246597, 34.78943602797433], [60.976654052482914, 34.65075408689669], [60.85319130034436, 34.56762706486542], [60.832909273505145, 34.56179108123129], [60.7791633368559, 34.55610010362752], [60.73999118318428, 34.54471815018499], [60.723873286064794, 34.52790908136832], [60.76777333685711, 34.477982107595714], [60.798254127559794, 34.463318135264046], [60.88360922694348, 34.355273223992135], [60.878873283612755, 34.31971802860358], [60.83610026456579, 34.32262705188977], [60.76666323745654, 34.32221801516195], [60.73930017930478, 34.32000016356606], [60.67512715489465, 34.31401816686917], [60.546109212055946, 34.19638217860117], [60.52610026857153, 34.16944508881556], [60.51097327968574, 34.14554509732406], [60.5044362339733, 34.12221809293091], [60.50416331860349, 34.09166421206901], [60.50918223484193, 34.06010902884488], [60.51999120182, 34.010554043237235], [60.52916335121383, 33.96138211123622], [60.55359123424331, 33.82187321159238], [60.551654176334914, 33.79721801106606], [60.54055419023908, 33.77693598485271], [60.50869122289418, 33.73995402207689], [60.51332725380232, 33.689709038605955], [60.5202632790617, 33.660691057019385], [60.5308271586808, 33.639991108929564], [60.546109212055946, 33.62526410530955], [60.57054514219376, 33.611109082387536], [60.597209150256035, 33.59749117168997], [60.66610018043728, 33.56750005160438], [60.70897327989175, 33.560482219226735], [60.78777322801845, 33.561654009719184], [60.85582724125561, 33.55888211366161], [60.89401821005814, 33.55582707819528], [60.915545115929916, 33.54790902919711], [60.93888217920148, 33.51703613250246], [60.929827208748264, 33.50495395464115], [60.87756336026545, 33.50075395063896], [60.852700288396576, 33.484227016477824], [60.80331813832721, 33.39082713377654], [60.756945091134725, 33.34499119955751], [60.723873286064794, 33.308882127744], [60.63138233747503, 33.20750015864401], [60.583263339069354, 33.14957316110953], [60.58055414054671, 33.0886001799302], [60.58250025077821, 33.06610013400547], [60.587909260428816, 33.04313606633254], [60.59582714159875, 33.01360913609703], [60.65970914689112, 32.81860013486141], [60.72638232467077, 32.6238821534735], [60.832773319775086, 32.32193599274381], [60.85180023936395, 32.26110902441017], [60.85832722753847, 32.22596420695674], [60.85500028274777, 32.19054496605249], [60.83665414061716, 32.09027309645537], [60.814436229967605, 32.01943612382909], [60.80693610313399, 31.99666416921357]], [[56.28832719003616, 26.949973226585566], [56.24527320940935, 26.927491118346325], [56.15860013867173, 26.86860908683021], [56.15304511685487, 26.858327005931322], [56.146945102426464, 26.85027317030015], [56.13304522479523, 26.835000169164903], [56.11832710590765, 26.819718115931668], [56.06054511504365, 26.771664161825036], [55.98720916154777, 26.727773164112488], [55.910818172517914, 26.709436074092935], [55.81916323475908, 26.709164165267676], [55.696100299397315, 26.688882138621732], [55.684718177623566, 26.685554020720648], [55.6750001992867, 26.681382179699018], [55.558882173522434, 26.622500147805926], [55.327491186046245, 26.546109158551655], [55.30040925656096, 26.541244972721184], [55.28360924079847, 26.558609090784028], [55.27499130342593, 26.65082712524041], [55.28249126227457, 26.658054001912294], [55.29500024691038, 26.655273221625983], [55.315545129784894, 26.64471805893115], [55.32860916457015, 26.64193610511815], [55.36027331228483, 26.642773121995294], [55.51860025552184, 26.69888208442991], [55.59943616786636, 26.7324911700032], [55.636654165096466, 26.753609039117457], [55.646382201869564, 26.758609012706977], [55.66610029422119, 26.767773114814027], [55.675827157794544, 26.772218038144167], [55.7113821847875, 26.780554008564607], [55.740545173019555, 26.77860907147754], [55.75110922152192, 26.782773201026952], [55.76999130214432, 26.792773146713376], [55.78416325611891, 26.841109067982288], [55.76860024116391, 26.881109019109605], [55.76305410368521, 26.892773107616645], [55.7522181468244, 26.90388214714918], [55.74249128325108, 26.912218117282062], [55.73707322127735, 26.92638219229128], [55.75458217847894, 26.952082114059007], [55.78110922579972, 26.94860915565044], [55.84221816235276, 26.92193609564977], [55.85336324297751, 26.915553947055184], [55.956654107120556, 26.930000157551166], [55.999436179388944, 26.957500176263437], [56.10054506624958, 26.9852731089792], [56.155545103137726, 26.99860016767813], [56.2205450860557, 27.00055398965132], [56.23220917462409, 26.996109066163015], [56.27304513666098, 26.97582703935671], [56.282773341419045, 26.970273190208122], [56.290273300267685, 26.963327107402836], [56.28832719003616, 26.949973226585566]], [[55.70374509811077, 26.812353942928507], [55.66944517657151, 26.790273160544114], [55.65804511723818, 26.785827063428112], [55.64777326284994, 26.784445055564813], [55.63750023436363, 26.785273187290546], [55.63276328581812, 26.79471808356654], [55.62638231070823, 26.833054059431802], [55.63832719287147, 26.86443607216032], [55.692627173557035, 26.92999110476655], [55.71332712181929, 26.903609064567505], [55.71720928384607, 26.892773107616645], [55.73499115641748, 26.838054031640596], [55.73165415319054, 26.797500037021695], [55.72137324647918, 26.798882213093698], [55.70374509811077, 26.812353942928507]]]}, "properties": {}}, {
+        color: "#d8dcdd",
+        weight: 2,
+        fillColor: "#d8dcdd",
+        fillOpacity: 0.25
+    }).bindPopup('<b>Iran</b><br>Direct overlap detected');
+    layer_8_hit_0.addTo(layer_8_combined);
+                    
+
+    // Add combined layer to layer control
+    overlayMaps["Iran"] = layer_8_combined;
+    allLayers.push(layer_8_combined);
+            
+
+    // Debug logging for geometry data
+    console.log("Input feature:", inputFeature);
+    
+    // Log when all layers are loaded
+    console.log("Total layers loaded:", allLayers.length);
+    
+    
+    // Add layer control to the map - this will contain the dynamic layers from DYNAMIC_LAYERS_PLACEHOLDER
+    const layerControl = L.control.layers(null, overlayMaps, {
+        position: 'topright',  // Explicitly set position
+        collapsed: false,
+        sortLayers: false,
+        sortFunction: function(a, b) {
+            // Always show Input Feature first
+            if (a.name === "Input Feature") return -1;
+            if (b.name === "Input Feature") return 1;
+            return a.name.localeCompare(b.name);
+        }
+    }).addTo(map);
+
+     // Add event listener to the layer control checkbox
+    document.getElementById('layer-control-checkbox').addEventListener('change', function(e) {
+        const layerControlDiv = document.querySelector('.leaflet-control-layers');
+        if (layerControlDiv) {
+            if (this.checked) {
+                // Show the layer control
+                layerControlDiv.classList.remove('leaflet-control-layers-hidden');
+            } else {
+                // Hide the layer control
+                layerControlDiv.classList.add('leaflet-control-layers-hidden');
+            }
+        }
+    });   
+
+    // Function to update the dynamic legend based on visible layers
+    function updateLegend() {
+        const legendContent = document.getElementById('legend-content');
+        let html = '';
+        let visibleLayers = 0;
+        
+        // Loop through all layers in the control
+        Object.keys(overlayMaps).forEach(layerName => {
+            const layer = overlayMaps[layerName];
+            
+            // Check if layer is on the map (visible)
+            if (map.hasLayer(layer)) {
+                visibleLayers++;
+                
+                // Get the color for this layer
+                let color = '#cccccc'; // Default color
+                
+                // Try to extract color from layer style
+                if (layer.options && layer.options.color) {
+                    color = layer.options.color;
+                } else if (layerInfo[layerName] && layerInfo[layerName].color) {
+                    color = layerInfo[layerName].color;
+                } else if (layer.getLayers && layer.getLayers().length > 0) {
+                    // For feature groups, try to get color from first child
+                    const firstChild = layer.getLayers()[0];
+                    if (firstChild.options && firstChild.options.color) {
+                        color = firstChild.options.color;
+                    } else if (firstChild.options && firstChild.options.fillColor) {
+                        color = firstChild.options.fillColor;
+                    }
+                }
+                
+                // Add this layer to the legend
+                html += `
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: ${color}"></div>
+                    <div class="legend-label">${layerName}</div>
+                </div>`;
+            }
+        });
+        
+        // // Also include any visible WMS layers
+        // for (const [name, layer] of Object.entries(bcgwlayers)) {
+        //     if (map.hasLayer(layer)) {
+        //         visibleLayers++;
+        //         // WMS layers will use predefined colors
+        //         html += `
+        //         <div class="legend-item">
+        //             <div class="legend-color" style="background-color: #5cadbf"></div>
+        //             <div class="legend-label">${name}</div>
+        //         </div>`;
+        //     }
+        // }
+        
+        // Show message if no layers visible
+        if (visibleLayers === 0) {
+            html = '<div class="legend-empty">No layers visible</div>';
+        }
+        
+        // Update the legend content
+        legendContent.innerHTML = html;
+    }
+    
+    // Add event listeners to update the legend when layers change
+    map.on('overlayadd overlayremove', updateLegend);
+    
+    // Function to store layer style information when layers are created
+    function storeLayerInfo(name, layer, options) {
+        // Store color and other style information
+        layerInfo[name] = {
+            color: options.color || options.fillColor || '#cccccc'
+        };
+    }
+    
+    // Force map to zoom to features after short delay
+    setTimeout(function() {
+      // Check if input layer has valid bounds
+      if (typeof inputLayer !== 'undefined' && inputLayer && inputLayer.getBounds) {
+        try {
+          map.fitBounds(inputLayer.getBounds(), { padding: [20, 20] });
+        } catch (e) {
+          console.error("Error fitting bounds:", e);
+          map.setView([49.491, -119.589], 12);
+        }
+      }
+      
+      // Debug information
+      console.log("Number of layers loaded:", allLayers.length);
+      console.log("Overlay maps:", Object.keys(overlayMaps));
+      
+      // Initialize the legend
+      updateLegend();
+    }, 500);
+  </script>
+</body>
+</html>
